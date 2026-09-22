@@ -1,5 +1,20 @@
 """Multi-factor book engine for the crack complex.
 
+AUDIT NOTE (2026-09-22). This is a research artifact, not a validated edge.
+Two corrections were applied after an independent audit:
+
+  1. Return basis. P&L was priced as pos * level.pct_change(). That explodes
+     when a spread level crosses zero (bzwti crosses ~548 times, crack_gas
+     ~60). Replaced with pos * level.diff() / rolling_mean(|level|), the same
+     basis the audit-corrected engine uses. See base_of().
+  2. Honesty. The backtest here runs on yfinance continuous front-month
+     futures, which are NOT back-adjusted: the legs roll on different dates
+     and inject a scheduled level jump into the crack spread (+3.915 $/bbl
+     every March, 18 of 18 years). Those sessions were 40.2% of the
+     measured P&L in a later walk-forward. On roll-free spot prices the edge
+     is not statistically significant. Do not size capital to these numbers.
+     Full record: algoterminal-strategy-v2/findings/artifact_audit.md
+
 Combines four distinct, nearly uncorrelated factors into one portfolio:
 
   F1  Seasonal mean reversion (WTI product complex)
@@ -95,6 +110,15 @@ def build_levels(df: pd.DataFrame) -> dict[str, pd.Series]:
         "ng": df.NG,
         "bzwti": df.BZ - df.CL,
     }
+
+
+def base_of(level: pd.Series, lookback: int = VOL_LOOKBACK) -> pd.Series:
+    """Return denominator: rolling mean of |level|.
+
+    Used instead of pct_change so a spread that crosses zero does not
+    explode the return. Same basis as the audit-corrected engine.
+    """
+    return level.abs().rolling(lookback, min_periods=10).mean()
 
 
 def seasonal_mean(s: pd.Series, minobs: int = SEASON_MIN_OBS) -> pd.Series:
@@ -311,11 +335,14 @@ def main() -> None:
                 if pos.iloc[i] != 0.0 and not np.isnan(arr[i]).all():
                     held_level.iloc[i] = levels[cols[int(np.nanargmin(arr[i]))]].iloc[i]
             prev_held = held_level.shift(1)
-            r = pos.shift(1).fillna(0.0) * prev_held.pct_change().fillna(0.0)
+            _ = prev_held  # kept for compatibility; basis now uses diff/base
+            b = base_of(held_level).shift(1).replace(0.0, np.nan)
+            r = pos.shift(1).fillna(0.0) * held_level.diff() / b
             factor_rets[name] = r.fillna(0.0)
         else:
             level = levels[name]
-            r = pos.shift(1).fillna(0.0) * level.pct_change().fillna(0.0)
+            b = base_of(level).shift(1).replace(0.0, np.nan)
+            r = pos.shift(1).fillna(0.0) * level.diff() / b
             factor_rets[name] = r.fillna(0.0)
 
     print("\n=== FACTOR BOOK (2023-09 to 2026-09) ===")

@@ -37,11 +37,27 @@ Prints per-factor stats, correlation matrix, and the combined book.
 
 ## Honest caveats
 
-- 3-year sample (2023-09 to 2026-09), in-sample, parameters are mid-plateau
-  picks, not peaks.
-- No costs, slippage, or futures roll modeling.
+**AUDIT UPDATE (2026-09-22) — read this before using any number.**
+
+- Return basis fixed. P&L was priced as `level.pct_change()`, which explodes
+  when a spread crosses zero (`bzwti` crosses ~548 times). The file now uses
+  `diff / rolling_mean(|level|)`, matching the audit-corrected engine.
+- The price panel is yfinance continuous front-month futures, which are
+  **not** back-adjusted. The legs roll on different dates, so the crack
+  series gains **+3.915 $/bbl every March, in 18 of 18 years**, and repays it
+  across the other months. Those sessions were **40.2%** of the measured P&L
+  in a later walk-forward. This is contract construction, not refining margin.
+- On roll-free spot prices (EIA), at measured real cost (16-24 bps/side, not
+  5), the edge is **not statistically significant**: ann +4% to +8%,
+  Sharpe 0.39 to 0.67, block t 1.0 to 2.3, DSR 0.04 to 0.23, on an
+  architecture selected in-sample.
+- Full record: `algoterminal-strategy-v2/findings/artifact_audit.md`.
+
+Older caveats, still true:
+
+- 3-year sample default, in-sample, parameters are mid-plateau picks,
+  not peaks.
+- No costs, slippage, or futures roll modeling in this file.
 - Small trade counts per factor (crack legs ~9-11 trades in 2.75 years).
-- Combined Sharpe ~2.6 in-sample is a backtest artifact risk until confirmed
-  out-of-sample; do not size capital to it yet.
-- Next steps: 10y validation, transaction-cost/roll model, options/tail
-  overlay.
+- Combined Sharpe ~2.6 in-sample is a backtest artifact. Do not size
+  capital to it.
